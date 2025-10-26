@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>하노이탑 직접 플레이 (시간 & 최고기록)</title>
+<style>
+  body { text-align:center; background:#f4f4f4; font-family:"맑은 고딕",sans-serif; margin:0; }
+  h1 { margin-top:10px; color:#333; font-size:clamp(18px,3vw,28px); }
+  h2 { margin-top:10px; font-size:clamp(16px,2.5vw,24px); }
+  canvas{
+    background:#fff; border:2px solid #888; border-radius:10px; margin-top:15px;
+    width:95%; max-width:800px; height:auto; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  }
+  #info{ margin-top:8px; font-size:clamp(14px,2vw,18px); display:inline-block; padding:2px 6px; border-radius:6px; }
+  button{
+    margin:4px; padding:8px 12px; border-radius:8px; border:none; background:#5a7dff; color:#fff;
+    font-size:clamp(12px,2vw,16px); cursor:pointer; transition:.2s;
+  }
+  button:hover{ background:#3b5ed9; transform:scale(1.05); }
+  #overlay{ position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; }
+  #nameBox{
+    background:#fff; padding:25px; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,.3);
+    max-width:360px; text-align:left;
+  }
+  #nameBox h2,#nameBox p{ text-align:center; }
+  input{ padding:8px; font-size:16px; border-radius:6px; border:1px solid #ccc; width:100%; box-sizing:border-box; }
+  .rules{ margin-top:12px; background:#f9f9ff; border:1px solid #e2e6ff; border-radius:8px; padding:10px 12px; font-size:14px; color:#333; }
+  .rules strong{ display:block; margin-bottom:6px; color:#3b5ed9; }
+  .toolbar{ margin-top:6px; }
+  .modebar{ margin-top:4px; }
+  .modebar span{ font-size:14px; margin-right:4px; }
+  #perfect{ font-size:28px; color:#ff4081; font-weight:bold; animation:pop 1.2s ease; min-height:1.4em; }
+  #recordBadge{ font-size:20px; color:#ff9800; font-weight:700; min-height:1.4em; }
+  .flash{ animation:flashbg .9s ease 2; }
+  @keyframes pop{ 0%{transform:scale(.5);opacity:0} 50%{transform:scale(1.2);opacity:1} 100%{transform:scale(1);opacity:1} }
+  @keyframes flashbg{ 0%,100%{ background-color:transparent } 50%{ background-color:#fff3cd } }
+</style>
+</head>
+<body>
+  <h1>🧠 하노이탑 게임 | 만든이: 경인교대 음악교육과 주은향</h1>
+
+  <!-- 시작 오버레이 -->
+  <div id="overlay">
+    <div id="nameBox">
+      <h2>하노이탑 도전하기</h2>
+      <p>이름을 입력하세요:</p>
+      <input type="text" id="playerName" placeholder="예: 지현, 민수, 영우" onkeydown="if(event.key==='Enter') startGame()">
+      <div class="rules">
+        <strong>게임 규칙</strong>
+        <ol style="margin:0 0 0 18px; padding:0;">
+          <li>한번에 하나씩, 맨 위에 있는 고리만 옮기기</li>
+          <li>작은 고리 위에 큰 고리를 올릴 수 없음</li>
+        </ol>
+      </div>
+      <div class="rules" style="margin-top:12px;">
+        <strong>모드 선택</strong>
+        <label><input type="radio" name="modeSel" value="practice" checked> 연습 모드 (기록 저장 안 함)</label><br>
+        <label><input type="radio" name="modeSel" value="normal"> 일반 모드 (기록 저장)</label><br>
+        <label><input type="radio" name="modeSel" value="attack"> 타임어택 모드 (기록 저장)</label>
+        <div style="font-size:12px;color:#666;margin-top:6px;">
+          • 연습: 제한시간 없음, 기록 저장 안 함<br>
+          • 일반: 제한시간 없음, 기록 저장함<br>
+          • 타임어택: 제한시간 내 클리어 시 기록 저장
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:12px;">
+        <button onclick="startGame()">게임 시작</button>
+        <button onclick="showRules()">규칙 설명</button>
+      </div>
+    </div>
+  </div>
+
+  <h2 id="greeting" style="display:none;"></h2>
+
+  <div id="levelButtons" style="display:none;">
+    <button onclick="setLevel(5)">레벨 1 (5개)</button>
+    <button onclick="setLevel(6)">레벨 2 (6개)</button>
+    <button onclick="setLevel(7)">레벨 3 (7개)</button>
+    <button onclick="setLevel(8)">레벨 4 (8개)</button>
+    <button onclick="setLevel(9)">레벨 5 (9개)</button>
+    <button onclick="setLevel(10)">레벨 6 (10개)</button>
+  </div>
+
+  <canvas id="game" width="800" height="400" style="display:none;"></canvas>
+  <div id="info" style="display:none;">레벨 1 | 이동 횟수: 0 | 시간: 0:00.0</div>
+
+  <!-- 모드 전환 바 -->
+  <div class="modebar" id="modebar" style="display:none;">
+    <span>모드:</span>
+    <button onclick="setGameMode('practice')">연습 모드</button>
+    <button onclick="setGameMode('normal')">일반 모드</button>
+    <button onclick="setGameMode('attack')">타임어택 모드</button>
+  </div>
+
+  <!-- 툴바 -->
+  <div class="toolbar">
+    <button id="restartBtn" style="display:none;" onclick="restartLevel()">🔄 다시하기</button>
+    <button id="undoBtn" style="display:none;" onclick="undoMove()">↩️ 이동 취소</button>
+    <button id="helpBtn" style="display:none;" onclick="showRules()">📜 규칙 설명</button>
+    <button id="showRecords" style="display:none;" onclick="showBestRecords()">🏆 최고기록 보기</button>
+    <button id="showSummary" style="display:none;" onclick="showSummaryRecords()">📊 전체 기록 보기</button>
+  </div>
+
+  <div id="perfect"></div>
+  <div id="recordBadge"></div>
+
+<script>
+/* ===== 설정 (간격/디스크 폭 조절) ===== */
+const PEG_SPACING = 160;   // 가운데 기준 좌우 간격(px)
+const DISK_SCALE  = 22;    // 디스크 폭 = 번호 × DISK_SCALE
+
+/* ===== DOM ===== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const info = document.getElementById('info');
+const greeting = document.getElementById('greeting');
+
+/* ===== 상태 ===== */
+let n = 5;
+let pegs = [[], [], []];
+let moveHistory = [];
+let selectedPeg = null;
+let moveCount = 0;
+let startTime = 0;
+let timerInterval = null;
+let elapsed = 0;            // ms
+let player = "";
+let mode = 'practice';      // 'practice' | 'normal' | 'attack'
+let attackTimeLimitMs = 0;  // 타임어택 제한(ms)
+let attackTimeOver = false; // 시간 초과 플래그
+
+/* 퍼펙트 기준과 타임어택 제한의 여유도 */
+const OPT_TIME_PER_MOVE = 1.2;   // (초/이동)
+const ATTACK_TIME_FACTOR = 1.5;  // 퍼펙트 기준의 1.5배
+
+/* 규칙 텍스트 */
+const RULES_TEXT = "1. 한번에 하나씩, 맨 위에 있는 고리만 옮기기\n2. 작은 고리 위에 큰 고리를 올릴 수 없음";
+
+/* ===== 유틸 ===== */
+function formatTime(ms){
+  let totalSec = Math.floor(ms/1000), h = Math.floor(totalSec/3600);
+  let min = Math.floor((totalSec%3600)/60), sec = totalSec%60;
+  let t = Math.floor((ms%1000)/100);
+  return h>0 ? `${h}:${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}.${t}` : `${min}:${String(sec).padStart(2,'0')}.${t}`;
+}
+function minMovesOf(k){ return Math.pow(2,k)-1; }
+function getSelectedModeFromOverlay(){
+  const r=document.querySelectorAll("input[name='modeSel']"); for(const x of r) if(x.checked) return x.value; return 'practice';
+}
+function bestKey(player,level,mode){ return `hanoi_best_${player}_L${level}_mode_${mode}`; }
+function afterPaint(fn){ requestAnimationFrame(()=>setTimeout(fn,0)); }
+function modeLabel(m){ return m==='attack' ? '타임어택' : (m==='normal' ? '일반' : '연습'); }
+function highlightNewRecord(m){
+  const badge = document.getElementById('recordBadge');
+  badge.textContent = `🏆 신기록! (${modeLabel(m)})`;
+  info.classList.add('flash');
+  setTimeout(()=>{ info.classList.remove('flash'); badge.textContent=''; }, 2000);
+}
+
+/* ===== 시작/초기화 ===== */
+function startGame(){
+  const nameInput=document.getElementById('playerName').value.trim();
+  if(!nameInput) return alert("이름을 입력해주세요!");
+  player=nameInput; mode=getSelectedModeFromOverlay();
+
+  document.getElementById('overlay').style.display="none";
+  greeting.style.display="block";
+  greeting.textContent=`👋 ${player}님, 하노이탑에 오신 것을 환영합니다!`;
+  document.getElementById('levelButtons').style.display="block";
+  canvas.style.display="block"; info.style.display="block";
+  document.getElementById('modebar').style.display="block";
+  document.getElementById('restartBtn').style.display="inline-block";
+  document.getElementById('undoBtn').style.display="inline-block";
+  document.getElementById('helpBtn').style.display="inline-block";
+  document.getElementById('showRecords').style.display="inline-block";
+  document.getElementById('showSummary').style.display="inline-block";
+  initGame(n);
+}
+function initGame(numDisks){
+  pegs=[[],[],[]]; moveHistory=[];
+  for(let i=numDisks;i>=1;i--) pegs[0].push(i);
+  selectedPeg=null; moveCount=0; elapsed=0; attackTimeOver=false;
+  clearInterval(timerInterval); startTime=Date.now();
+
+  if(mode==='attack'){
+    const perfectSec=minMovesOf(n)*OPT_TIME_PER_MOVE;
+    attackTimeLimitMs=Math.round(perfectSec*ATTACK_TIME_FACTOR*1000);
+  } else attackTimeLimitMs=0;
+
+  timerInterval=setInterval(updateTime,100);
+  document.getElementById('perfect').textContent="";
+  draw(); updateInfo();
+}
+
+/* ===== 시간/정보 ===== */
+function updateTime(){
+  elapsed=Date.now()-startTime;
+  if(mode==='attack' && elapsed>=attackTimeLimitMs && !attackTimeOver){
+    attackTimeOver=true; clearInterval(timerInterval); updateInfo();
+    afterPaint(()=>alert("⏰ 시간 초과! 다시하기(🔄) 버튼으로 재도전하세요."));
+  }
+  updateInfo();
+}
+function updateInfo(){
+  if(mode==='attack'){
+    const remain=Math.max(0,attackTimeLimitMs-elapsed);
+    info.textContent=`모드: 타임어택 | 레벨 ${n-4} | 이동 횟수: ${moveCount} | 남은: ${formatTime(remain)} / 제한: ${formatTime(attackTimeLimitMs)}`;
+  } else if (mode==='normal'){
+    info.textContent=`모드: 일반 | 레벨 ${n-4} | 이동 횟수: ${moveCount} | 시간: ${formatTime(elapsed)} (기록 저장)`;
+  } else {
+    info.textContent=`모드: 연습 | 레벨 ${n-4} | 이동 횟수: ${moveCount} | 시간: ${formatTime(elapsed)} (저장 안 함)`;
+  }
+}
+
+/* ===== 그리기 ===== */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const center=canvas.width/2;
+  const pegX=[center-PEG_SPACING, center, center+PEG_SPACING];
+
+  // 기둥 + 라벨
+  pegX.forEach((x,i)=>{
+    ctx.fillStyle=(selectedPeg===i)?"#ff7070":"#888";
+    ctx.fillRect(x-5,150,10,200);
+    ctx.fillStyle="#333"; ctx.font="18px 맑은 고딕"; ctx.textAlign="center";
+    ctx.fillText(String.fromCharCode(65+i), x, 390);
+  });
+
+  // 원판 + 번호
+  for(let i=0;i<3;i++){
+    const peg=pegs[i];
+    for(let j=0;j<peg.length;j++){
+      const disk=peg[j];
+      const width=disk*DISK_SCALE;
+      const x=pegX[i]-width/2;
+      const y=330-j*20;
+      ctx.fillStyle=`hsl(${disk*35},70%,55%)`;
+      ctx.fillRect(x,y,width,18);
+      ctx.fillStyle="white"; ctx.font="bold 14px 맑은 고딕"; ctx.textAlign="center";
+      ctx.fillText(String(disk), pegX[i], y+14);
+    }
+  }
+}
+
+/* ===== 입력 처리 (클릭+터치) ===== */
+function actOnPeg(pegIndex){
+  if(mode==='attack' && attackTimeOver){ afterPaint(()=>alert("⏰ 시간 초과! 다시하기(🔄) 버튼으로 재도전하세요.")); return; }
+  if(selectedPeg===null){
+    if(pegs[pegIndex].length>0){ selectedPeg=pegIndex; draw(); }
+  }else{
+    if(selectedPeg!==pegIndex){
+      const fromPeg=pegs[selectedPeg], toPeg=pegs[pegIndex];
+      const moving=fromPeg[fromPeg.length-1], topTo=toPeg[toPeg.length-1];
+      if(!topTo || moving<topTo){
+        toPeg.push(fromPeg.pop()); moveHistory.push([selectedPeg,pegIndex]); moveCount++;
+      }else afterPaint(()=>alert("❌ 큰 원판 위에 작은 원판만 놓을 수 있어요!"));
+    }
+    selectedPeg=null; draw(); updateInfo(); checkWin();
+  }
+}
+function handlePoint(clientX){
+  const rect=canvas.getBoundingClientRect();
+  const x=clientX-rect.left;
+  const pegIndex = x < rect.width/3 ? 0 : (x < rect.width*2/3 ? 1 : 2);
+  actOnPeg(pegIndex);
+}
+canvas.addEventListener('click',e=>handlePoint(e.clientX));
+canvas.addEventListener('pointerdown',e=>{ if(e.pointerType!=='mouse'){ e.preventDefault(); handlePoint(e.clientX); } });
+
+/* ===== 버튼 ===== */
+function restartLevel(){ setLevel(n); }
+function undoMove(){
+  if(moveHistory.length===0) return afterPaint(()=>alert("되돌릴 이동이 없습니다."));
+  const [from,to]=moveHistory.pop(); const disk=pegs[to].pop(); pegs[from].push(disk);
+  moveCount=Math.max(0,moveCount-1); selectedPeg=null; draw(); updateInfo();
+}
+function showBestRecords(){
+  // 일반/타임어택 각각 레벨별 최고 기록 표시
+  let result=`🏆 ${player}님의 최고기록\n`;
+  const modesToShow=['normal','attack'];
+  for(const m of modesToShow){
+    result += `\n[${modeLabel(m)}]\n`;
+    let any=false;
+    for(let i=5;i<=10;i++){
+      const key=bestKey(player,i,m);
+      const rec=localStorage.getItem(key);
+      if(rec){ result += `레벨 ${i-4}: ${rec}초\n`; any=true; }
+    }
+    if(!any) result += "(기록 없음)\n";
+  }
+  alert(result.trim());
+}
+function showSummaryRecords(){
+  // 모든 레벨의 평균/총합 (일반/타임어택 각각)
+  let msg = `📊 전체 기록 요약 (${player})\n`;
+  for(const m of ['normal','attack']){
+    let times=[];
+    for(let i=5;i<=10;i++){
+      const rec=localStorage.getItem(bestKey(player,i,m));
+      if(rec){ const s=parseFloat(rec); if(!isNaN(s)) times.push(s); }
+    }
+    msg += `\n[${modeLabel(m)}]\n`;
+    if(times.length){
+      const total = times.reduce((a,b)=>a+b,0);
+      const avg = total / times.length;
+      msg += `- 기록 수: ${times.length}개\n`;
+      msg += `- 평균: ${formatTime(Math.round(avg*1000))}\n`;
+      msg += `- 총합: ${formatTime(Math.round(total*1000))}\n`;
+    } else {
+      msg += "(기록 없음)\n";
+    }
+  }
+  alert(msg.trim());
+}
+function showRules(){ alert(RULES_TEXT); }
+function setGameMode(m){ if(!['practice','normal','attack'].includes(m)) return; mode=m; initGame(n); }
+
+/* ===== 클리어 판정 (afterPaint로 완성 그림 먼저 표시) ===== */
+function checkWin(){
+  if(pegs[2].length!==n) return;
+  clearInterval(timerInterval);
+  selectedPeg=null; draw(); updateInfo();
+
+  const minMoves=minMovesOf(n), timeSec=elapsed/1000;
+  const perfectLimit=minMoves*OPT_TIME_PER_MOVE;
+  const isPerfect=(moveCount===minMoves) && (timeSec<=perfectLimit);
+
+  if(mode==='attack' && attackTimeOver) return afterPaint(()=>alert("⏰ 시간 초과로 실패! 다시 도전해 보세요."));
+
+  let msg=`🎉 ${player}님, 레벨 ${n-4} 클리어!\n`;
+
+  if(mode==='practice'){
+    msg+=`경과 시간: ${formatTime(elapsed)}\n이동 횟수: ${moveCount}회\n(연습 모드에서는 기록이 저장되지 않습니다)`;
+    if(isPerfect) msg+=`\n🎯 Perfect!! (최소 ${minMoves}회, ${perfectLimit.toFixed(1)}초 이내)`;
+    return afterPaint(()=>{ if(isPerfect){ const el=document.getElementById('perfect'); el.textContent="🎯 Perfect!!"; setTimeout(()=>{el.textContent="";},3000);} alert(msg.trim()); if(n<10) setTimeout(()=>setLevel(n+1),1000); });
+  }
+
+  // 기록 저장 모드(일반/타임어택)
+  const key=bestKey(player,n,mode);
+  const prev=localStorage.getItem(key);
+  const cur=timeSec.toFixed(1);
+  msg+=`경과 시간: ${formatTime(elapsed)}\n이동 횟수: ${moveCount}회\n`;
+  let isNew=false;
+  if(!prev || parseFloat(cur)<parseFloat(prev)){ localStorage.setItem(key,cur); msg+="🏆 (신기록!)\n"; isNew=true; }
+  else msg+=`최고기록: ${prev}초\n`;
+  if(isPerfect) msg+=`🎯 Perfect!! (최소 ${minMoves}회, ${perfectLimit.toFixed(1)}초 이내)\n`;
+
+  afterPaint(()=>{
+    if(isPerfect){ const el=document.getElementById('perfect'); el.textContent="🎯 Perfect!!"; setTimeout(()=>{el.textContent="";},3000); }
+    if(isNew) highlightNewRecord(mode);
+    alert(msg.trim());
+    if(n<10) setTimeout(()=>setLevel(n+1),1000);
+  });
+}
+
+function setLevel(level){ n=level; initGame(level); }
+</script>
+</body>
+</html>
